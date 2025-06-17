@@ -85,6 +85,12 @@ python notion_helper.py page <page_id>
 # データベース全体のダウンロード
 python notion_helper.py database <database_id>
 
+# データベースをマークダウンテーブル形式でダウンロード
+python notion_helper.py download_table <database_id>
+
+# データベースの情報を表示（ページリスト、プロパティ等）
+python notion_helper.py info <database_id>
+
 # 検索してダウンロード
 python notion_helper.py search "検索クエリ"
 ```
