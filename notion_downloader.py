@@ -7,6 +7,7 @@ ObsidianディレクトリにNotionドキュメントを保存するツール
 import os
 import json
 import requests
+import csv
 from datetime import datetime
 from pathlib import Path
 import argparse
@@ -302,6 +303,207 @@ class NotionDownloader:
                 print(f"ページ {page_id} のダウンロードに失敗: {e}")
         
         return saved_files
+    
+    def get_database_info(self, database_id: str) -> Dict:
+        """
+        データベースの情報を取得
+        
+        Args:
+            database_id (str): NotionデータベースID
+            
+        Returns:
+            Dict: データベースの情報
+        """
+        url = f"https://api.notion.com/v1/databases/{database_id}"
+        response = requests.get(url, headers=self.headers)
+        response.raise_for_status()
+        return response.json()
+    
+    def get_database_pages(self, database_id: str) -> List[Dict]:
+        """
+        データベースのページリストを取得
+        
+        Args:
+            database_id (str): NotionデータベースID
+            
+        Returns:
+            List[Dict]: データベースのページリスト
+        """
+        url = f"https://api.notion.com/v1/databases/{database_id}/query"
+        response = requests.post(url, headers=self.headers, json={})
+        response.raise_for_status()
+        return response.json()["results"]
+    
+    def get_database_schema(self, database_id: str) -> Dict:
+        """
+        データベースのスキーマ（プロパティ定義）を取得
+        
+        Args:
+            database_id (str): NotionデータベースID
+            
+        Returns:
+            Dict: データベースのスキーマ
+        """
+        database_info = self.get_database_info(database_id)
+        return database_info.get("properties", {})
+    
+    def download_database_as_markdown_table(self, database_id: str, output_dir: Optional[str] = None) -> str:
+        """
+        データベースをマークダウンテーブル形式でダウンロード
+        
+        Args:
+            database_id (str): NotionデータベースID
+            output_dir (Optional[str]): 出力ディレクトリ
+            
+        Returns:
+            str: 保存されたファイルのパス
+        """
+        print(f"データベースをマークダウンテーブル形式でダウンロード中: {database_id}")
+        
+        # データベース情報を取得
+        database_info = self.get_database_info(database_id)
+        database_title = self.get_page_title(database_info)
+        
+        # ファイル名を生成
+        safe_title = "".join(c for c in database_title if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        safe_title = safe_title.replace(' ', '_')
+        filename = f"{safe_title}_table.md"
+        
+        # 出力ディレクトリを決定
+        if output_dir:
+            output_path = Path(output_dir)
+        else:
+            output_path = self.base_path
+        
+        output_path.mkdir(parents=True, exist_ok=True)
+        file_path = output_path / filename
+        
+        # ページリストを取得
+        pages = self.get_database_pages(database_id)
+        
+        # マークダウンコンテンツを生成
+        markdown_content = []
+        
+        # ヘッダー情報
+        markdown_content.append(f"# {database_title} - テーブル形式\n")
+        markdown_content.append(f"**作成日**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        markdown_content.append(f"**データベースID**: {database_id}\n")
+        markdown_content.append(f"**ページ数**: {len(pages)}\n\n")
+        markdown_content.append("---\n\n")
+        
+        if not pages:
+            markdown_content.append("データベースにページがありません。\n")
+        else:
+            # プロパティ名を取得（ヘッダー行用）
+            properties = database_info.get("properties", {})
+            property_names = list(properties.keys())
+            
+            # 追加の列を定義
+            additional_columns = ["ページID", "作成日", "最終更新日", "URL"]
+            all_columns = property_names + additional_columns
+            
+            # テーブルヘッダー
+            markdown_content.append("| " + " | ".join(all_columns) + " |\n")
+            markdown_content.append("| " + " | ".join(["---"] * len(all_columns)) + " |\n")
+            
+            # 各行のデータ
+            for page in pages:
+                row_data = []
+                page_properties = page.get("properties", {})
+                
+                # 既存のプロパティを処理
+                for prop_name in property_names:
+                    prop_value = page_properties.get(prop_name, {})
+                    prop_type = prop_value.get("type", "")
+                    
+                    # プロパティの値を取得
+                    if prop_type == "title":
+                        content = prop_value.get("title", [])
+                        text = self._extract_text(content) if content else "無題"
+                    elif prop_type == "rich_text":
+                        content = prop_value.get("rich_text", [])
+                        text = self._extract_text(content) if content else ""
+                    elif prop_type == "select":
+                        content = prop_value.get("select", {})
+                        text = content.get("name", "") if content else ""
+                    elif prop_type == "multi_select":
+                        content = prop_value.get("multi_select", [])
+                        text = ", ".join([item.get("name", "") for item in content]) if content else ""
+                    elif prop_type == "date":
+                        content = prop_value.get("date", {})
+                        if content:
+                            start_date = content.get("start", "")
+                            end_date = content.get("end", "")
+                            if end_date and end_date != start_date:
+                                text = f"{start_date} - {end_date}"
+                            else:
+                                text = start_date
+                        else:
+                            text = ""
+                    elif prop_type == "number":
+                        text = str(prop_value.get("number", ""))
+                    elif prop_type == "checkbox":
+                        text = "✅" if prop_value.get("checkbox", False) else "❌"
+                    elif prop_type == "url":
+                        text = prop_value.get("url", "")
+                    elif prop_type == "email":
+                        text = prop_value.get("email", "")
+                    elif prop_type == "phone_number":
+                        text = prop_value.get("phone_number", "")
+                    elif prop_type == "created_time":
+                        text = prop_value.get("created_time", "")
+                    elif prop_type == "created_by":
+                        content = prop_value.get("created_by", {})
+                        text = content.get("name", "") if content else ""
+                    elif prop_type == "last_edited_time":
+                        text = prop_value.get("last_edited_time", "")
+                    elif prop_type == "last_edited_by":
+                        content = prop_value.get("last_edited_by", {})
+                        text = content.get("name", "") if content else ""
+                    else:
+                        text = str(prop_value.get(prop_type, ""))
+                    
+                    # テーブルセル内の改行やパイプ文字をエスケープ
+                    text = text.replace("|", "\\|").replace("\n", "<br>")
+                    row_data.append(text)
+                
+                # 追加の列のデータを処理
+                page_id = page["id"]
+                created_time = page.get("created_time", "")
+                last_edited_time = page.get("last_edited_time", "")
+                notion_url = f"https://notion.so/{page_id.replace('-', '')}"
+                
+                # 日付を読みやすい形式に変換
+                if created_time:
+                    try:
+                        created_dt = datetime.fromisoformat(created_time.replace('Z', '+00:00'))
+                        created_time = created_dt.strftime('%Y-%m-%d %H:%M')
+                    except:
+                        pass
+                
+                if last_edited_time:
+                    try:
+                        edited_dt = datetime.fromisoformat(last_edited_time.replace('Z', '+00:00'))
+                        last_edited_time = edited_dt.strftime('%Y-%m-%d %H:%M')
+                    except:
+                        pass
+                
+                # 追加の列を追加
+                row_data.extend([
+                    page_id,
+                    created_time,
+                    last_edited_time,
+                    f"[リンク]({notion_url})"
+                ])
+                
+                markdown_content.append("| " + " | ".join(row_data) + " |\n")
+        
+        # ファイルに保存
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(''.join(markdown_content))
+        
+        print(f"マークダウンテーブルを保存しました: {file_path}")
+        return str(file_path)
 
 def main():
     parser = argparse.ArgumentParser(description="Notion API ドキュメントダウンローダー")
