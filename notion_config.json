@@ -1,0 +1,31 @@
+{
+  "notion": {
+    "token": "${NOTION_TOKEN}",
+    "default_output_dir": "notion_downloads",
+    "supported_block_types": [
+      "paragraph",
+      "heading_1",
+      "heading_2",
+      "heading_3",
+      "bulleted_list_item",
+      "numbered_list_item",
+      "to_do",
+      "code",
+      "quote",
+      "callout",
+      "divider",
+      "image",
+      "table_of_contents"
+    ]
+  },
+  "obsidian": {
+    "vault_path": ".",
+    "attachments_folder": "attachments",
+    "templates_folder": "templates"
+  },
+  "markdown": {
+    "include_metadata": true,
+    "include_notion_links": true,
+    "preserve_formatting": true
+  }
+}

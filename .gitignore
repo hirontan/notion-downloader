@@ -1,0 +1,28 @@
+# Python venv
+venv/
+
+# pyenv local version file
+.python-version
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# VSCode settings
+.vscode/
+
+# dotenv
+.env
+
+# OSファイル
+.DS_Store
+Thumbs.db
+
+# notionダウンロード出力
+notion_downloads/
+attachments/ 
